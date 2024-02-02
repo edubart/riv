@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>RIVEMU</title>
+    <style>
+      body {
+        background-color: #111;
+        color: white;
+      }
+      .small-font {
+        font-size: 12px;
+        font-family: monospace;
+      }
+      #canvas {
+        background-color: black;
+        image-rendering: pixelated;
+        outline: none;
+      }
+      .canvas-wrapper {
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="canvas-wrapper">
+      <div style="top: 0px; left: 0px; height: 100%; width: 100%;"></div>
+      <canvas id="canvas" tabindex="-1" width="768" height="768" oncontextmenu="event.preventDefault()"></canvas>
+    </div>
+    <div style="font-family: monospace; width: 768px; margin: auto; text-align: left;">
+      <div>
+        <button id="record" disabled="true" onclick="rivemuRecord()">Record</button>
+        <button id="replay" disabled="true" onclick="rivemuReplay()">Replay</button>
+        <button id="stop" disabled="true" onclick="rivemuStop()">Stop</button>
+        <button id="fullscreen" onclick="rivemuFullscreen()">Fullscreen</button>
+      </div>
+      <br/>
+      <div><b>Status: </b><span id="status">Downloading emulator...</span></div>
+      <div><b>Time: </b><span id="time">N/A</span></div>
+      <div><b>Frame: </b><span id="frame">N/A</span></div>
+      <div><b>Score: </b><span id="score">N/A</span></div>
+      <div><b>FPS: </b><span id="fps">N/A</span></div>
+      <div><b>CPU Speed: </b><span id="cpuSpeed">N/A</span></div>
+      <div><b>CPU Usage: </b><span id="cpuUsage">N/A</span></div>
+      <div><b>CPU Cycles: </b><span id="cpuCycles">N/A</span></div>
+      <div><b>Finished: </b><span id="finished">N/A</span></div>
+      <div><b>Progress: </b><span id="progress">N/A</span></div>
+      <div><b>Resolution: </b><span id="resolution">N/A</span></div>
+      <div>
+        <b>Cartridge: </b>
+        <span id="cartsize">N/A</span> - <span id="carthash">N/A</span>
+        <button id="upload_cartridge" class="small-font" onclick="rivemuUploadCartridge()">Upload</button>
+        <button id="download_cartridge" class="small-font" disabled="true" onclick="rivemuDownloadCartridge()">Download</button>
+      </div>
+      <div>
+        <b>In Card: </b><span id="insize">N/A</span> - <span id="inhash">N/A</span>
+        <button id="upload_incard" class="small-font" onclick="rivemuUploadIncard()">Upload</button>
+        <button id="download_incard" class="small-font" onclick="rivemuDownloadIncard()">Download</button>
+      </div>
+      <div>
+        <b>Log: </b><span id="logsize">N/A</span> - <span id="loghash">N/A</span>
+        <button id="upload_log" class="small-font" onclick="rivemuUploadLog()">Upload</button>
+        <button id="download_log" class="small-font" disabled="true" onclick="rivemuDownloadLog()">Download</button>
+      </div>
+      <div>
+        <b>Out Card: </b><span id="outsize">N/A</span> - <span id="outhash">N/A</span>
+        <button id="download_outcard" class="small-font" disabled="true" onclick="rivemuDownloadOutcard()">Download</button>
+      </div>
+      <div>
+        <b>Args: </b><span id="argssize">N/A</span> - <span id="argshash">N/A</span>
+        <br/>
+        <input type="text" class="small-font" id="args" style="width: 100%"/>
+      </div>
+      <h3>Games</h3>
+      <div>
+        <button onclick="rivemuInsertCartridge('cartridges/antcopter.sqfs')">Antcopter</button>
+        <button onclick="rivemuInsertCartridge('cartridges/game2048.sqfs')">2048</button>
+        <button onclick="rivemuInsertCartridge('cartridges/snake.sqfs')">Snake</button>
+        <button onclick="rivemuInsertCartridge('cartridges/doom.sqfs')">DOOM</button>
+        <button onclick="rivemuInsertCartridge('cartridges/monky.sqfs')">Monky</button>
+        <button onclick="rivemuInsertCartridge('cartridges/breakout.sqfs')">Breakout</button>
+      </div>
+      <h3>Demos</h3>
+      <div>
+        <button onclick="rivemuInsertCartridge('cartridges/bounce.sqfs')">bounce</button>
+        <button onclick="rivemuInsertCartridge('cartridges/circles.sqfs')">circles</button>
+        <button onclick="rivemuInsertCartridge('cartridges/glyphs.sqfs')">glyphs</button>
+        <button onclick="rivemuInsertCartridge('cartridges/hello.sqfs')">hello</button>
+        <button onclick="rivemuInsertCartridge('cartridges/lines.sqfs')">lines</button>
+        <button onclick="rivemuInsertCartridge('cartridges/many.sqfs')">many</button>
+        <button onclick="rivemuInsertCartridge('cartridges/palette.sqfs')">palette</button>
+        <button onclick="rivemuInsertCartridge('cartridges/particles.sqfs')">particles</button>
+        <button onclick="rivemuInsertCartridge('cartridges/play.sqfs')">play</button>
+        <button onclick="rivemuInsertCartridge('cartridges/wander.sqfs')">wander</button>
+        <button onclick="rivemuInsertCartridge('cartridges/waves.sqfs')">waves</button>
+        <button onclick="rivemuInsertCartridge('cartridges/jit.sqfs')">jit</button>
+      </div>
+    </div>
+    <script>
+      var lastArgs = '';
+      var lastIncard = new Uint8Array([]);
+      var lastOutcard;
+      var lastLog;
+      var lastCartridge;
+      var lastFrame;
+      var lastTotalFrames;
+      var lastTargetFps;
+      var runtimeInitialized = false;
+
+      let statusElem = document.getElementById("status");
+      let argsElem = document.getElementById("args");
+      let timeElem = document.getElementById("time");
+      let scoreElem = document.getElementById("score");
+      let finishedElem = document.getElementById("finished");
+      let progressElem = document.getElementById("progress");
+      let frameElem = document.getElementById("frame");
+      let fpsElem = document.getElementById("fps");
+      let cpuSpeedElem = document.getElementById("cpuSpeed");
+      let cpuUsageElem = document.getElementById("cpuUsage");
+      let cpuCyclesElem = document.getElementById("cpuCycles");
+      let resolutionElem = document.getElementById("resolution");
+      let canvasElem = document.getElementById("canvas");
+      let logsizeElem = document.getElementById("logsize");
+      let loghashElem = document.getElementById("loghash");
+      let argshashElem = document.getElementById("argshash");
+      let argssizeElem = document.getElementById("argssize");
+      let inhashElem = document.getElementById("inhash");
+      let insizeElem = document.getElementById("insize");
+      let outhashElem = document.getElementById("outhash");
+      let outsizeElem = document.getElementById("outsize");
+      let cartsizeElem = document.getElementById("cartsize");
+      let carthashElem = document.getElementById("carthash");
+      let textDecoder = new TextDecoder();
+      let textEncode = new TextEncoder();
+      var Module = {};
+
+      // Alert when WebGL context is lost.
+      canvasElem.addEventListener("webglcontextlost", (e) => {
+        alert('WebGL context lost. You will need to reload the page.'); e.preventDefault();
+      }, false);
+
+      // Fired by Emscripten when WASM is ready.
+      Module.onRuntimeInitialized = function(status) {
+        statusElem.textContent = "Idle";
+        runtimeInitialized = true;
+        window.dispatchEvent(new Event('rivemu_on_runtime_initialized'));
+      }
+
+      // Return SHA256 hexadecimal string from a chunk of data.
+      async function sha256sum(data) {
+        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+        return hashHex;
+      }
+
+      // Open an user file dialog for saving a file.
+      function downloadFileDialog(data, filename) {
+        if (typeof data === 'undefined') {
+          return;
+        }
+        let blob = new Blob([data], { type: "application/octet-stream" });
+        let url = URL.createObjectURL(blob);
+        let el = document.createElement('a');
+        el.style.display = 'none';
+        el.download = filename;
+        el.href = url;
+        document.body.appendChild(el);
+        el.click();
+        URL.revokeObjectURL(url);
+        el.remove();
+      }
+
+      // Open an user file dialog for downloading a file.
+      async function uploadFileDialog(ext) {
+        let src = await new Promise(function(resolve, reject) {
+          let el = document.createElement("input");
+          el.type = "file";
+          el.accept = ext;
+          el.addEventListener('change', function() {
+            if (el.files.length) {
+              resolve(el.files[0]);
+            } else {
+              reject("No file");
+            }
+            el.remove();
+          });
+          el.click();
+        });
+        let url = URL.createObjectURL(src);
+        let response = await fetch(url);
+        URL.revokeObjectURL(url);
+        if (!response.ok) {
+          return null;
+        }
+        const buffer = await response.arrayBuffer();
+        const data = new Uint8Array(buffer);
+        return data;
+      }
+
+      // Fetch a file from a URL.
+      async function downloadFile(url) {
+        // Retrieve cartridge
+        const response = await fetch(url);
+        if (!response.ok) {
+          return;
+        }
+        const buffer = await response.arrayBuffer();
+        const data = new Uint8Array(buffer);
+        return data;
+      }
+
+      // Waits for a window event to fire.
+      function waitEvent(name) {
+        return new Promise((resolve) => {
+          const listener = (e) => {
+            window.removeEventListener(name, listener);
+            resolve(e);
+          }
+          window.addEventListener(name, listener);
+        })
+      }
+
+      // Wait the WASM emulator be downloaded and initialized.
+      async function waitRuntimeInitialize() {
+        if (!runtimeInitialized) {
+          statusElem.textContent = "Downloading emulator...";
+          await waitEvent("rivemu_on_runtime_initialized");
+        }
+      }
+
+      // Called before record/replaying.
+      async function rivemuBeforeStart(log, cartridge, incard, args) {
+        // Update statistics
+        statusElem.textContent = "Loading...";
+        scoreElem.textContent = "N/A";
+        timeElem.textContent = "N/A";
+        finishedElem.textContent = "N/A";
+        progressElem.textContent = "N/A";
+        frameElem.textContent = "N/A";
+        fpsElem.textContent = "N/A";
+        cpuSpeedElem.textContent = "N/A";
+        cpuUsageElem.textContent = "N/A";
+        cpuCyclesElem.textContent= "N/A";
+        resolutionElem.textContent = "N/A";
+        cartsizeElem.textContent = Math.ceil(cartridge.length / 1024) + " KB";
+        carthashElem.textContent = await sha256sum(cartridge);
+        inhashElem.textContent = await sha256sum(incard);
+        insizeElem.textContent = incard.length + " bytes";
+        argshashElem.textContent = await sha256sum(textEncode.encode(args));
+        argssizeElem.textContent = args.length + " bytes";
+        if (log) {
+          logsizeElem.textContent = log.length + " bytes";
+          loghashElem.textContent = await sha256sum(log);
+        } else {
+          logsizeElem.textContent = "N/A";
+          loghashElem.textContent = "N/A";
+          outhashElem.textContent = "N/A";
+          outsizeElem.textContent = "N/A";
+        }
+
+        // Disable some buttons while recording/replaying
+        document.getElementById('stop').disabled = false;
+        document.getElementById('record').disabled = false;
+        document.getElementById('replay').disabled = false;
+        document.getElementById('download_cartridge').disabled = false;
+      }
+
+      async function rivemuInsertCartridge(url) {
+        await rivemuStop();
+        statusElem.textContent = "Downloading cartridge...";
+        rivemuRecord(await downloadFile(url));
+      }
+
+      async function rivemuUploadCartridge() {
+        rivemuRecord(await uploadFileDialog(".sqfs"));
+      }
+
+      function rivemuDownloadCartridge() {
+        downloadFileDialog(lastCartridge, "cartridge.sqfs");
+      }
+
+      async function rivemuUploadLog() {
+        rivemuReplay(await uploadFileDialog(".rivlog"));
+      }
+
+      function rivemuDownloadLog() {
+        downloadFileDialog(lastLog, "gameplay.rivlog");
+      }
+
+      async function rivemuUploadIncard() {
+        rivemuRecord(null, await uploadFileDialog(".rivincard"));
+      }
+
+      function rivemuDownloadIncard() {
+        downloadFileDialog(lastIncard, "gameplay.rivincard");
+      }
+
+      function rivemuDownloadOutcard() {
+        downloadFileDialog(lastOutcard, "gameplay.rivoutcard");
+      }
+
+      // Stop recording/replaying.
+      async function rivemuStop() {
+        await waitRuntimeInitialize();
+        if (Module.ccall('rivemu_stop')) {
+          statusElem.textContent = "Stopping...";
+          await waitEvent('rivemu_on_shutdown');
+        }
+        statusElem.textContent = "Stopped";
+      }
+
+      // Start recording a log.
+      async function rivemuRecord(cartridge, incard, args) {
+        // Wait previous run to finish
+        await rivemuStop();
+        // Set default arguments
+        cartridge = cartridge || lastCartridge;
+        incard = incard || lastIncard;
+        args = args || argsElem.value;
+        lastCartridge = cartridge;
+        lastIncard = incard;
+        lastArgs = args;
+        await rivemuBeforeStart(null, cartridge, incard, args);
+        await waitRuntimeInitialize();
+        // Move cartridge into WASM memory
+        const cartridgeBuf = Module._malloc(cartridge.length);
+        const incardBuf = Module._malloc(incard.length);
+        Module.HEAPU8.set(cartridge, cartridgeBuf);
+        Module.HEAPU8.set(incard, incardBuf);
+        Module.ccall('rivemu_start_record', null, ['number', 'number', 'number', 'number', 'string'], [
+          cartridgeBuf, cartridge.length,
+          incardBuf, incard.length,
+          args
+        ]);
+        Module._free(cartridgeBuf);
+        Module._free(incardBuf);
+      }
+
+      // Start replaying a log.
+      async function rivemuReplay(log, cartridge, incard, args) {
+        // Wait previous run to finish
+        await rivemuStop();
+        // Set default arguments
+        log = log || lastLog;
+        cartridge = cartridge || lastCartridge;
+        incard = incard || lastIncard;
+        args = args || argsElem.value;
+        lastLog = log;
+        lastCartridge = cartridge;
+        lastIncard = incard;
+        lastArgs = args;
+        await rivemuBeforeStart(log, cartridge, incard, args);
+        await waitRuntimeInitialize();
+        // Move cartridge into WASM memory
+        const cartridgeBuf = Module._malloc(cartridge.length);
+        const incardBuf = Module._malloc(incard.length);
+        const logBuf = Module._malloc(log.length);
+        Module.HEAPU8.set(cartridge, cartridgeBuf);
+        Module.HEAPU8.set(incard, incardBuf);
+        Module.HEAPU8.set(log, logBuf);
+        Module.ccall('rivemu_start_replay', null, ['number', 'number', 'number', 'number', 'string', 'number', 'number'], [
+          cartridgeBuf, cartridge.length,
+          incardBuf, incard.length,
+          args,
+          logBuf, log.length
+        ]);
+        Module._free(cartridgeBuf);
+        Module._free(incardBuf);
+        Module._free(logBuf);
+      }
+
+      // Enter fullscreen mode.
+      function rivemuFullscreen() {
+        canvasElem.requestFullscreen();
+      }
+
+      // Called by RIVEMU before the first frame.
+      function rivemu_on_begin(width, height, target_fps, total_frames) {
+        lastFrame = 0;
+        lastTotalFrames = total_frames;
+        lastTargetFps = target_fps;
+        resolutionElem.textContent =
+          width+"x"+height+"@"+target_fps + " -> " + canvasElem.width+"x"+canvasElem.height+"@60";
+        frameElem.textContent = "0";
+        if (total_frames > 0) {
+          progressElem.textContent = "0%";
+          statusElem.textContent = "Replaying...";
+        } else {
+          statusElem.textContent = "Recording...";
+        }
+      }
+
+      // Called by RIVEMU after the last frame.
+      async function rivemu_on_finish(log, outcard, outhash) {
+        // We need to make a deep copy of a Uint8Array here, otherwise
+        lastLog = new Uint8Array(log);
+        lastOutcard = new Uint8Array(outcard);
+        // Show outcard
+        let outcard_str = textDecoder.decode(outcard);
+        if (outcard_str.substring(0, 4) == 'JSON') {
+          let scores = JSON.parse(outcard_str.substring(4));
+          console.log(scores);
+        }
+        // Update buttons
+        document.getElementById('stop').disabled = true;
+        document.getElementById('replay').disabled = false;
+        document.getElementById('download_outcard').disabled = false;
+        document.getElementById('download_log').disabled = false;
+        // Update labels
+        statusElem.textContent = "Stopped";
+        outhashElem.textContent = outhash;
+        outsizeElem.textContent = outcard.length + " bytes";
+        logsizeElem.textContent = log.length + " bytes";
+        loghashElem.textContent = await sha256sum(log);
+      }
+
+      // Called by RIVEMU on every frame.
+      function rivemu_on_frame(outcard, frame, fps, mips, cpu_usage, cycles) {
+        const mins = Math.floor(frame / (60 * lastTargetFps));
+        const secs = (frame / lastTargetFps) - (60 * mins);
+        timeElem.textContent = mins + " mins " + secs.toFixed(3) + " secs";
+        fpsElem.textContent = fps.toFixed(2) + " fps";
+        cpuSpeedElem.textContent = mips.toFixed(2) + " MIPS";
+        cpuUsageElem.textContent = cpu_usage.toFixed(2) + " %";
+        cpuCyclesElem.textContent = (cycles / 1000000).toFixed(3) + " M (" + ((100*cycles)/(600*128000000)).toFixed(2) + "% quota)";
+        frameElem.textContent = frame;
+        if (lastTotalFrames > 0) {
+          progressElem.textContent = (frame*100/lastTotalFrames).toFixed(2) + "%";
+        }
+        let outcard_str = textDecoder.decode(outcard);
+        if (outcard_str.substring(0, 4) == 'JSON') {
+          let scores = JSON.parse(outcard_str.substring(4));
+          if (typeof scores.score !== 'undefined') {
+            scoreElem.textContent = scores.score;
+          }
+          if (typeof scores.finished !== 'undefined') {
+            finishedElem.textContent = scores.finished;
+          }
+        }
+      }
+    </script>
+    <script async src="rivemu.js"></script>
+  </body>
+</html>
